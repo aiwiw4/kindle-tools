@@ -1,56 +1,68 @@
-# Welcome to your Expo app 👋
+# Kindle Tools
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Android-приложение: конвертирует книги в TXT и раздаёт готовые TXT по Wi-Fi, чтобы открыть их в браузере Kindle.
 
-## Get started
+## Скриншоты
 
-1. Install dependencies
+<p>
+  <img src="docs/screenshots/converter.jpg" width="270" alt="Конвертер">
+  <img src="docs/screenshots/converter-result.jpg" width="270" alt="Готовый TXT">
+</p>
 
-   ```bash
-   npm install
-   ```
+<p>
+  <img src="docs/screenshots/server-files.jpg" width="270" alt="Файлы">
+  <img src="docs/screenshots/server-running.jpg" width="270" alt="Сервер запущен">
+  <img src="docs/screenshots/kindle-browser.png" width="330" alt="Страница в браузере">
+</p>
 
-2. Start the app
+## Что умеет
 
-   ```bash
-   npx expo start
-   ```
+- EPUB, FB2, DOCX → TXT. Название и автор берутся из метаданных (OPF у EPUB, `core.xml` у DOCX).
+- Абзацы сохраняются, теги, скрипты и навигация вырезаются.
+- Результат пишется в `uploads/`, оттуда его можно отправить через системный «Поделиться».
+- Локальный HTTP-сервер на порту 8000: список файлов и скачивание. Раздаёт только `.txt`, остальное не показывается и не отдаётся.
+- Переименование, удаление, пакетная нумерация TXT.
+- Счётчик нумерации хранится на телефоне. Подхватывает максимальный номер из `uploads/` и запоминает ручное переименование: назвал файл `320.txt` — следующий будет 321.
+- `uploads/` очищается при каждом запуске приложения.
 
-In the output, you'll find options to open the app in a
+## Как устроено
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+Expo SDK 58, expo-router, TypeScript. Конвертация — JSZip, fast-xml-parser, htmlparser2. Сервер — `react-native-tcp-socket`, поэтому он работает только в нативной сборке, в Expo Go его нет.
 
-You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+src/app/(tabs)/index.tsx   конвертер
+src/app/(tabs)/server.tsx  сервер и список файлов
+src/lib/convert.ts         EPUB/FB2/DOCX → текст
+src/lib/server.ts          HTTP на 8000
+src/lib/filesystem.ts      uploads, размеры, копирование
+src/lib/counter.ts         счётчик номеров
 ```
 
-This command will move the starter code to the **example** directory and create a blank **src/app** directory where you can start developing.
+## Запуск
 
-### Other setup steps
+```
+npm install
+npx expo start
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+В Expo Go работает только конвертер. Для сервера нужна нативная сборка:
 
-## Learn more
+```
+npx expo prebuild -p android
+npx expo run:android
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+Release APK:
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+```
+cd android
+./gradlew assembleRelease
+```
 
-## Join the community
+Готовый файл: `android/app/build/outputs/apk/release/app-release.apk`. Подписан debug-ключом из шаблона — для установки руками этого достаточно, для Google Play нужен свой keystore.
 
-Join our community of developers creating universal apps.
+## Мелочи
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- Телефон и Kindle должны быть в одной Wi-Fi сети. VPN может мешать доступу к локальным адресам.
+- Порт 8000, адрес показывается на вкладке «Сервер».
+- Пакет: `com.akelc.kindletools`.
