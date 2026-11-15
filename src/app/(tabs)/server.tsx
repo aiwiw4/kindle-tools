@@ -9,6 +9,7 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   View,
   useColorScheme,
 } from 'react-native';
@@ -25,7 +26,6 @@ import {
   syncCounterWithFiles,
 } from '@/lib/counter';
 import {
-  SERVER_PORT,
   copyToUploads,
   formatBytes,
   isTxtFile,
@@ -36,11 +36,14 @@ import {
 import {
   getServerInstance,
   getServerOrigin,
+  getServerPort,
   hasTcpModule,
   isExpoGo,
   isServerSupported,
+  loadServerPort,
   startFileServer,
   stopFileServer,
+  updateServerPort,
 } from '@/lib/server';
 
 export default function ServerScreen() {
@@ -58,6 +61,8 @@ export default function ServerScreen() {
   const [renameTarget, setRenameTarget] = useState<UploadFile | null>(null);
   const [renameName, setRenameName] = useState('');
   const [nextNumber, setNextNumber] = useState(1);
+  const [port, setPort] = useState(8000);
+  const [portInput, setPortInput] = useState('8000');
 
   const refresh = useCallback(async () => {
     try {
@@ -79,6 +84,12 @@ export default function ServerScreen() {
   useEffect(() => {
     refresh();
     loadIp();
+    loadServerPort()
+      .then((value) => {
+        setPort(value);
+        setPortInput(String(value));
+      })
+      .catch(() => {});
   }, [refresh, loadIp]);
 
   useEffect(() => {
@@ -107,9 +118,19 @@ export default function ServerScreen() {
       );
       return;
     }
+    const parsedPort = Number(portInput);
+    if (!Number.isInteger(parsedPort) || parsedPort < 1024 || parsedPort > 65535) {
+      Alert.alert('Порт', 'Нужно число от 1024 до 65535');
+      return;
+    }
     setBusy(true);
     try {
       if (!running) {
+        if (parsedPort !== port) {
+          const saved = await updateServerPort(parsedPort);
+          setPort(saved);
+          setPortInput(String(saved));
+        }
         await startFileServer();
         await loadIp();
         setRunning(true);
@@ -131,7 +152,22 @@ export default function ServerScreen() {
     if (!running || !ip) {
       return '';
     }
-    return `http://${ip}:${SERVER_PORT}`;
+    return `http://${ip}:${port}`;
+  };
+
+  const applyPort = async () => {
+    const value = Number(portInput);
+    if (!Number.isInteger(value) || value < 1024 || value > 65535) {
+      Alert.alert('Порт', 'Нужно число от 1024 до 65535');
+      return;
+    }
+    try {
+      const saved = await updateServerPort(value);
+      setPort(saved);
+      setPortInput(String(saved));
+    } catch (error) {
+      Alert.alert('Порт', error instanceof Error ? error.message : 'Не удалось сохранить порт');
+    }
   };
 
   const copyKindleUrl = async () => {
@@ -147,18 +183,30 @@ export default function ServerScreen() {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         copyToCacheDirectory: false,
-        multiple: false,
+        multiple: true,
         type: '*/*',
       });
       if (result.canceled) {
         return;
       }
-      const asset = result.assets?.[0];
-      if (!asset) {
+      const assets = result.assets ?? [];
+      if (assets.length === 0) {
         return;
       }
-      await copyToUploads(asset.uri, asset.name ?? `file-${Date.now()}.txt`);
+      let firstError: string | null = null;
+      for (const asset of assets) {
+        try {
+          await copyToUploads(asset.uri, asset.name ?? `file-${Date.now()}.txt`);
+        } catch (error) {
+          firstError =
+            firstError ??
+            (error instanceof Error ? error.message : 'Не удалось добавить файл');
+        }
+      }
       await refresh();
+      if (firstError) {
+        Alert.alert('Ошибка', firstError);
+      }
     } catch (error) {
       Alert.alert(
         'Ошибка',
@@ -291,14 +339,40 @@ export default function ServerScreen() {
             </View>
 
             <View style={[styles.card, { backgroundColor: cardBackground, borderColor }]}>
-              <Text
-                style={[
-                  styles.status,
-                  { color: running ? '#2ecc71' : colors.text },
-                ]}
-              >
-                {running ? '● Запущен' : '○ Остановлен'}
-              </Text>
+              <View style={styles.statusRow}>
+                <Text
+                  style={[
+                    styles.status,
+                    { color: running ? '#2ecc71' : colors.text },
+                  ]}
+                >
+                  {running ? '● Запущен' : '○ Остановлен'}
+                </Text>
+                <View style={styles.portRow}>
+                  <Text style={[styles.portLabel, { color: colors.text }]}>порт</Text>
+                  <TextInput
+                    value={portInput}
+                    onChangeText={setPortInput}
+                    keyboardType="number-pad"
+                    editable={!running}
+                    style={[
+                      styles.portInput,
+                      {
+                        color: colors.text,
+                        borderColor,
+                        backgroundColor: isDark ? '#0f0f0f' : '#fff',
+                      },
+                    ]}
+                  />
+                  <ActionButton
+                    title="OK"
+                    onPress={applyPort}
+                    variant="secondary"
+                    disabled={running || portInput === String(port)}
+                    style={styles.portBtn}
+                  />
+                </View>
+              </View>
               {running ? (
                 <>
                   <Text style={[styles.url, { color: colors.text }]}>
@@ -421,6 +495,31 @@ const styles = StyleSheet.create({
   status: {
     fontSize: 18,
     fontWeight: '600',
+  },
+  statusRow: {
+    gap: 10,
+  },
+  portRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  portLabel: {
+    fontSize: 13,
+    opacity: 0.7,
+  },
+  portInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 14,
+    minWidth: 78,
+  },
+  portBtn: {
+    minHeight: 34,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
   },
   url: {
     fontSize: 16,

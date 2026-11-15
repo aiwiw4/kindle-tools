@@ -1,8 +1,6 @@
 import { File as FsFile } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
 
-export const SERVER_PORT = 8000;
-
 export type UploadFile = {
   name: string;
   uri: string;

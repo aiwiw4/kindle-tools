@@ -4,18 +4,19 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { NativeModules } from 'react-native';
 
 import {
-  SERVER_PORT,
   ensureUploadsDir,
   isTxtFile,
   listUploadFiles,
   type UploadFile,
 } from './filesystem';
+import { DEFAULT_PORT, isValidPort, readSettings, updateSettings } from './settings';
 
 const EXPO_GO_ERROR =
   'HTTP-сервер не работает в Expo Go. Соберите dev build: npx expo run:android';
 
 let server: any = null;
 let active = false;
+let serverPort = DEFAULT_PORT;
 
 function loadTcpSocket(): any {
   try {
@@ -49,16 +50,37 @@ export function isServerActive(): boolean {
   return active;
 }
 
+export function getServerPort(): number {
+  return serverPort;
+}
+
+export async function loadServerPort(): Promise<number> {
+  const settings = await readSettings();
+  serverPort = settings.port;
+  return serverPort;
+}
+
+export async function updateServerPort(port: number): Promise<number> {
+  if (!isValidPort(port)) {
+    throw new Error('Порт должен быть от 1024 до 65535');
+  }
+  await updateSettings({ port });
+  serverPort = port;
+  return serverPort;
+}
+
 export function getServerOrigin(): string {
-  return active ? `http://0.0.0.0:${SERVER_PORT}` : '';
+  return active ? `http://0.0.0.0:${serverPort}` : '';
 }
 
 export async function startFileServer(): Promise<string> {
   if (isExpoGo() || !hasTcpModule()) {
     throw new Error(EXPO_GO_ERROR);
   }
+  const settings = await readSettings();
+  serverPort = settings.port;
   if (server) {
-    return `http://0.0.0.0:${SERVER_PORT}`;
+    return `http://0.0.0.0:${serverPort}`;
   }
   const net = loadTcpSocket();
   const instance = net.createServer(attachClientHandler);
@@ -76,7 +98,7 @@ export async function startFileServer(): Promise<string> {
       };
       server.on('error', onError);
       server.listen(
-        { port: SERVER_PORT, host: '0.0.0.0', reuseAddress: true },
+        { port: serverPort, host: '0.0.0.0', reuseAddress: true },
         () => {
           try {
             server?.off?.('error', onError);
@@ -97,7 +119,7 @@ export async function startFileServer(): Promise<string> {
     throw error;
   }
   active = true;
-  return `http://0.0.0.0:${SERVER_PORT}`;
+  return `http://0.0.0.0:${serverPort}`;
 }
 
 export async function stopFileServer(): Promise<void> {
@@ -154,7 +176,7 @@ function writeResponse(
   const head =
     `HTTP/1.1 ${statusCode} ${statusText}\r\n` +
     headerLines +
-    `\r\nContent-Length: ${body.length}` +
+    `\r\nContent-Length: ${body.length}\r\n` +
     'Connection: close\r\n\r\n';
   socket.end(Buffer.concat([Buffer.from(head, 'utf8'), body]));
 }
