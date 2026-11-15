@@ -50,7 +50,7 @@ export default function RenameModal({
           </View>
           <TextInput
             value={value}
-            onChangeText={(text) => onChange(sanitizeFileName(text))}
+            onChangeText={(text) => onChange(sanitizeFileName(text, false))}
             placeholder="Новое имя файла"
             placeholderTextColor={isDark ? '#888' : '#999'}
             autoFocus

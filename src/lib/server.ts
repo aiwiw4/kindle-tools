@@ -149,6 +149,42 @@ function parsePath(request: string): string {
   }
 }
 
+function rawTarget(request: string): string {
+  const firstLine = request.split(/\r?\n/)[0] ?? '';
+  return firstLine.split(' ')[1] ?? '/';
+}
+
+function queryValue(request: string, key: string): string {
+  const target = rawTarget(request);
+  const index = target.indexOf('?');
+  if (index === -1) {
+    return '';
+  }
+  for (const pair of target.slice(index + 1).split('&')) {
+    const eq = pair.indexOf('=');
+    if (eq !== -1 && pair.slice(0, eq) === key) {
+      return pair.slice(eq + 1);
+    }
+  }
+  return '';
+}
+
+function decodeNameList(raw: string): string[] {
+  if (!raw) {
+    return [];
+  }
+  return raw
+    .split(',')
+    .filter(Boolean)
+    .map((part) => {
+      try {
+        return decodeURIComponent(part);
+      } catch {
+        return part;
+      }
+    });
+}
+
 function buildListingHtml(files: UploadFile[]): string {
   const items = files
     .map(
@@ -156,10 +192,16 @@ function buildListingHtml(files: UploadFile[]): string {
         `<li><a href="/${encodeURIComponent(file.name)}">${file.name}</a> (${file.size} байт)</li>`
     )
     .join('\n');
+  const allNames = files.map((file) => encodeURIComponent(file.name)).join(',');
+  const controls = files.length
+    ? `<hr>\n<p><a href="/seq?list=${allNames}&i=0">Скачать все</a></p>`
+    : '';
   return (
     '<!DOCTYPE html>\n<html>\n<head><meta charset="UTF-8"><title>Файлы для скачивания</title></head>\n<body>\n<h1>Файлы для скачивания:</h1>\n<ul>\n' +
     (items || '<li>Нет файлов</li>') +
-    '\n</ul>\n<hr>\n<p>Нажмите на файл для скачивания</p>\n</body>\n</html>'
+    '\n</ul>\n' +
+    controls +
+    '\n<hr>\n<p>Нажмите на файл для скачивания</p>\n</body>\n</html>'
   );
 }
 
@@ -204,8 +246,64 @@ function sendFile(socket: any, name: string, base64: string): void {
   );
 }
 
+function buildSequentialHtml(list: string, index: number, names: string[]): string {
+  const total = names.length;
+  if (index >= total) {
+    const links = names
+      .map((name) => `<li><a href="/${encodeURIComponent(name)}">${name}</a></li>`)
+      .join('\n');
+    return (
+      '<!DOCTYPE html>\n<html>\n<head><meta charset="UTF-8"><meta http-equiv="refresh" content="3;url=/"><title>Готово</title></head>\n<body>\n<h1>Готово</h1>\n<p><a href="/">На главную</a></p>\n<ul>\n' +
+      links +
+      '\n</ul>\n</body>\n</html>'
+    );
+  }
+  const name = names[index];
+  const next = `/seq?list=${list}&i=${index + 1}`;
+  const href = `/${encodeURIComponent(name)}`;
+  return (
+    '<!DOCTYPE html>\n<html>\n<head><meta charset="UTF-8"><meta http-equiv="refresh" content="4;url=' +
+    next +
+    '"><title>' +
+    (index + 1) +
+    '/' +
+    total +
+    '</title></head>\n<body>\n<h1>' +
+    (index + 1) +
+    '/' +
+    total +
+    ': ' +
+    name +
+    '</h1>\n<p><a href="' +
+    href +
+    '">Скачать ' +
+    name +
+    '</a></p>\n<iframe src="' +
+    href +
+    '" style="display:none"></iframe>\n<p>Переход к следующему файлу...</p>\n</body>\n</html>'
+  );
+}
+
 async function handleRequest(socket: any, request: string): Promise<void> {
   const path = parsePath(request);
+
+  if (path === '/seq') {
+    const list = queryValue(request, 'list');
+    const names = decodeNameList(list).filter((name) => isTxtFile(name));
+    if (names.length === 0) {
+      sendText(socket, 404, 'Not Found', 'text/plain; charset=utf-8', 'Файл не найден');
+      return;
+    }
+    const index = Number(queryValue(request, 'i') || '0');
+    sendText(
+      socket,
+      200,
+      'OK',
+      'text/html; charset=utf-8',
+      buildSequentialHtml(list, Number.isFinite(index) ? index : 0, names)
+    );
+    return;
+  }
   const dir = await ensureUploadsDir();
 
   if (path === '/' || path === '') {

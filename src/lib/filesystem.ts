@@ -100,8 +100,9 @@ export async function copyToUploads(sourceUri: string, rawName: string): Promise
   );
 }
 
-export function sanitizeFileName(name: string): string {
-  return name.replace(/[\\/:*?"<>|]/g, '_').trim();
+export function sanitizeFileName(name: string, trim = true): string {
+  const sanitized = name.replace(/[\\/:*?"<>|]/g, '_');
+  return trim ? sanitized.trim() : sanitized;
 }
 
 export async function renameUploadFile(fromUri: string, newName: string): Promise<string> {

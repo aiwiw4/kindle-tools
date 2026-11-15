@@ -20,9 +20,10 @@ import RenameModal from '@/components/rename-modal';
 import { getColors } from '@/constants/theme';
 import { shareTextFile } from '@/lib/files';
 import {
-  bumpCounterForName,
   getNextNumber,
+  numberFromName,
   renumberTxtFiles,
+  setNextNumber as persistNextNumber,
   syncCounterWithFiles,
 } from '@/lib/counter';
 import {
@@ -263,9 +264,14 @@ export default function ServerScreen() {
       return;
     }
     try {
-      await renameUploadFile(renameTarget.uri, renameName);
-      await bumpCounterForName(renameName);
-      setNextNumber(await getNextNumber());
+      const extension = renameTarget.name.match(/\.[^.]+$/)?.[0] ?? '';
+      const trimmed = renameName.trim();
+      const finalName = /^\d+$/.test(trimmed) ? `${trimmed}${extension}` : trimmed;
+      await renameUploadFile(renameTarget.uri, finalName);
+      const number = numberFromName(finalName);
+      const next = number === null ? await getNextNumber() : number + 1;
+      await persistNextNumber(next);
+      setNextNumber(next);
       closeRename();
       await refresh();
     } catch (error) {
